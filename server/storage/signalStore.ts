@@ -10,7 +10,7 @@ interface SignalRow {
 /**
  * Persistence for server-side signal events. The ResearchStore interface does
  * not model this table, so the writer takes the raw D1-like database when
- * available (Workers/Node with libSQL) and degrades to a no-op on the memory
+ * available (Node with libSQL) and degrades to a no-op on the memory
  * driver (in-memory signals stay browser-local there).
  */
 export function signalStoreFrom(store: ResearchStore): D1DatabaseLike | null {

@@ -5,7 +5,7 @@ import type { D1DatabaseLike, D1Statement } from './d1Types.ts';
  * Presents a libSQL client (Turso Cloud / sqld / file:) through the same
  * minimal D1 interface, so D1ResearchStore and D1MarketCache run unchanged
  * on top of libSQL. Only type imports here; callers construct the runtime
- * client ('@libsql/client/web' on Workers, '@libsql/client' on Node).
+ * client ('@libsql/client' on Node, any platform).
  */
 class LibSqlStatement implements D1Statement {
   readonly client: Client;

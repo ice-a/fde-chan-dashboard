@@ -8,7 +8,7 @@ import type { CatalogInstrument } from './catalog';
  * requests, so offset-window paging both duplicates and misses symbols — the
  * full download is the only reliable shape. The browser fetches this JSON via
  * the passthrough endpoint and parses it here (same pattern as the HKEX
- * workbook) so Workers never pays the parse cost.
+ * workbook).
  */
 export interface NasdaqScreenerParse {
   instruments: CatalogInstrument[];

@@ -10,14 +10,30 @@ import { D1ResearchStore } from '../storage/d1Store.ts';
 import { LibSqlDatabase } from '../storage/libsqlD1.ts';
 import { createDefaultRouter, createMarketHandler, createResearchHandler, json } from '../core/http.ts';
 import { hasNotifier, type NotifyConfig } from '../core/notify.ts';
+import { runCronTick } from '../core/cronRunner.ts';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
+
+/** Apply schema.sql idempotently so a fresh file:/remote DB works out of the box. */
+async function ensureSchema(url: string, authToken?: string): Promise<void> {
+  const client = createClient({ url, authToken });
+  const schema = await readFile(resolve(root, 'server/storage/schema.sql'), 'utf8');
+  const statements = schema
+    .split('\n').filter((line) => !line.trim().startsWith('--')).join('\n')
+    .split(/;\s*\n/).map((s) => s.trim()).filter((s) => s.length);
+  await client.batch(statements.map((sql) => ({ sql })), 'write');
+}
+
 const dist = resolve(root, 'dist');
 const cliToken = process.argv.includes('--research-token') ? process.argv[process.argv.indexOf('--research-token') + 1] : undefined;
 const notifyConfig: NotifyConfig = { barkUrl: process.env.NOTIFY_BARK_URL, ntfyUrl: process.env.NOTIFY_NTFY_URL, webhookUrl: process.env.NOTIFY_WEBHOOK_URL };
 const notify = hasNotifier(notifyConfig) ? notifyConfig : undefined;
 // TURSO_DATABASE_URL (libsql:// 远程或 file: 本地文件) 开启持久化；未配置时使用进程内存。
 const libSqlUrl = process.env.TURSO_DATABASE_URL;
+// Fresh file:/remote databases need the schema applied before anything reads it.
+if (libSqlUrl) await ensureSchema(libSqlUrl, process.env.TURSO_AUTH_TOKEN || undefined).catch((error) => {
+  console.error('[schema] 应用失败（已有库可忽略或运行 scripts/apply-schema.ts）', error);
+});
 const router = libSqlUrl
   ? createDefaultRouter(new D1MarketCache(new LibSqlDatabase(createClient({ url: libSqlUrl, authToken: process.env.TURSO_AUTH_TOKEN || undefined }))), process.env)
   : createDefaultRouter(new MemoryCache(), process.env);
@@ -30,6 +46,35 @@ const researchHandler = createResearchHandler(router, researchStore
 const marketHandler = createMarketHandler(router);
 // Catalog sync and full scans must not be bound by the short request timeout.
 const LONG_PATHS = new Set(['/api/catalog/sync', '/api/scans']);
+
+// ----- Daily pipeline timer (self-hosted scheduler) -----
+// runCronTick is platform-neutral: each call does one bounded slice of the
+// sync→scan→finalize cycle and persists progress, so any timer cadence works.
+// Requires TURSO_DATABASE_URL; without persistence there is no pipeline state.
+const cronEnabled = !!process.env.TURSO_DATABASE_URL && !!researchStore;
+const cronIntervalMs = Math.max(60_000, (Number(process.env.CRON_TICK_SECONDS) || 60) * 1000);
+if (cronEnabled) {
+  const tick = async (): Promise<void> => {
+    try {
+      const result = await runCronTick({
+        store: researchStore!,
+        router,
+        batchSize: Number(process.env.CRON_SCAN_BATCH) || 8,
+        cycleHourUtc: Number(process.env.CRON_CYCLE_HOUR_UTC) || 16,
+        cnSyncDeadlineHours: Number(process.env.CRON_CN_SYNC_DEADLINE_HOURS) || 0,
+        // CRON_IGNORE_GATE=1 unblocks the daily gate any time of day
+        // (verification / manual runs).
+        ignoreDailyGate: process.env.CRON_IGNORE_GATE === '1',
+        notify,
+      });
+      console.log(`[cron] ${result.action}: ${result.detail}`);
+    } catch (error) {
+      console.error('[cron] tick failed', error);
+    }
+  };
+  // Stagger the first tick so server startup is never blocked by pipeline work.
+  setTimeout(() => { void tick(); const timer = setInterval(tick, cronIntervalMs); timer.unref?.(); }, 5_000);
+}
 const mime: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json' };
 
 createServer(async (req, res) => {

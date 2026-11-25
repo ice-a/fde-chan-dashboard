@@ -17,7 +17,7 @@ export interface CronTickResult {
 export interface CronRunnerOptions {
   store: ResearchStore;
   router: ProviderRouter;
-  /** Instruments per scan tick. Free-plan Workers CPU favors small batches. */
+  /** Instruments per scan tick. Small batches keep each tick bounded. */
   batchSize?: number;
   /** Catalog pages advanced per tick during sync. */
   syncPagesPerTick?: number;
@@ -40,24 +40,23 @@ export interface CronRunnerOptions {
 }
 
 /**
- * One unit of the daily automated cycle, safe to invoke on a schedule (Workers
- * cron or a Node timer). Each tick does a bounded slice of work and persists
- * progress, so any tick can crash without losing the run:
+ * One unit of the daily automated cycle, safe to invoke on a schedule (the
+ * Node host timer in server/node/index.ts). Each tick does a bounded slice of
+ * work and persists progress, so any tick can crash without losing the run:
  *   daily gate → catalog sync (paged + single-shot sources) → commit →
  *   scan batches (with stale-claim recovery and one retry round) → finalize.
  */
 export async function runCronTick(options: CronRunnerOptions): Promise<CronTickResult> {
   const { store, router } = options;
-  // Free-plan Workers cap each cron invocation hard (CPU + subrequest count):
-  // one bar fetch takes 1-9s upstream plus retries, so a batch of 16 blew the
-  // budget (claimed items never wrote back). 4 keeps every tick well inside.
+  // One bar fetch takes 1-9s upstream plus retries; small bounded batches keep
+  // every tick predictable and let persisted progress resume after a crash.
   const batchSize = Math.min(8, Math.max(1, options.batchSize ?? 4));
   const syncPagesPerTick = Math.max(1, options.syncPagesPerTick ?? 3);
   const cycleHourUtc = options.cycleHourUtc ?? 16;
   const now = options.now ?? (() => new Date());
 
   // Mirror scheduling config into app_state so /api/pipeline/status can report
-  // the live cadence without access to Worker env (fire-and-forget, tiny rows).
+  // the live cadence from anywhere (fire-and-forget, tiny rows).
   void store.setAppState('cron:cycle-hour-utc', String(cycleHourUtc)).catch(() => {});
   void store.setAppState('cron:ignore-gate', options.ignoreDailyGate ? '1' : '0').catch(() => {});
 
@@ -74,8 +73,8 @@ export async function runCronTick(options: CronRunnerOptions): Promise<CronTickR
       }
       const scored = await finalizeRanked(store, latest.id);
       const events = await appendSignalEvents(store, latest.id, now);
-      // Push once per published snapshot. Awaited (Workers freeze the isolate
-      // when the tick returns) but bounded: sendNotification has per-channel
+      // Push once per published snapshot. Awaited but bounded: sendNotification
+      // has per-channel
       // timeouts and never throws, so a dead notifier cannot stall finalize.
       if (events && hasNotifier(options.notify)) {
         await sendNotification(options.notify!, buildFinalizeNotification({

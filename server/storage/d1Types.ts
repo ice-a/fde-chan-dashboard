@@ -1,6 +1,6 @@
 /**
- * Minimal structural types for Cloudflare D1 bindings.
- * Avoids importing 'cloudflare:workers' so the same code typechecks under Node.
+ * Minimal structural types for the D1-style SQL interface (libSQL compatible).
+ * Avoids platform-specific imports so the same code typechecks under Node.
  */
 export interface D1Statement {
   bind(...values: unknown[]): D1Statement;

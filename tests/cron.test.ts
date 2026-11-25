@@ -83,7 +83,7 @@ describe('cron runner daily cycle', () => {
 
   it('waits for an external CN sync before committing when CN sources failed', async () => {
     const store = new MemoryResearchStore();
-    // Egress where SSE/SZSE are blocked (Workers), Nasdaq reachable, HKEX fails.
+    // Egress where SSE/SZSE are blocked, Nasdaq reachable, HKEX fails.
     const cnBlockedFetch = (async (input: unknown) => {
       const url = String(input instanceof URL ? input : (input as { url?: string; toString(): string }));
       const json = (body: unknown) => ({ ok: true, status: 200, text: async () => JSON.stringify(body), json: async () => body, arrayBuffer: async () => new ArrayBuffer(0) }) as unknown as Response;

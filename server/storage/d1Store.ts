@@ -52,7 +52,7 @@ export class D1ResearchStore {
   private db: D1DatabaseLike;
   constructor(db: unknown, options: { driver?: 'client' | 'server' } = {}) {
     this.db = asD1(db);
-    // Workers rely on the browser-driven pipeline; Node self-hosts can auto-drive scans in-process.
+    // 'client' drivers rely on the dashboard-driven pipeline; 'server' drivers auto-drive scans in-process.
     this.driver = options.driver ?? 'client';
   }
 

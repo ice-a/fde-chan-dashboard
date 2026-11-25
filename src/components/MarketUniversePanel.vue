@@ -140,7 +140,7 @@ async function runPagedSync(): Promise<void> {
   }
   // Nasdaq: single-shot download proxied unparsed and parsed in the browser —
   // its paged endpoint orders rows non-deterministically, so offset windows
-  // both duplicate and miss symbols (Workers CPU budget rules out server parse).
+  // both duplicate and miss symbols.
   for (const kind of ['stocks', 'etf'] as const) {
     if (stop) return;
     const source: 'nasdaq_stocks' | 'nasdaq_etf' = kind === 'stocks' ? 'nasdaq_stocks' : 'nasdaq_etf';
@@ -162,7 +162,7 @@ async function runPagedSync(): Promise<void> {
       if (reported?.ok) syncStates.value = mergeState(syncStates.value, reported.state);
     }
   }
-  // HKEX workbook: heavy XLSX parse happens in the browser (Workers CPU budget).
+  // HKEX workbook: heavy XLSX parse happens in the browser.
   staging.value = true;
   try {
     const upstream = await fetch('/api/catalog/hkex-workbook');
@@ -218,7 +218,7 @@ async function startScan(): Promise<void> {
   } catch (e) { error.value = e instanceof Error ? e.message : '扫描启动失败'; busy.value = false; }
 }
 
-/** Workers driver: the dashboard walks steps, ranking, score upload, and finalize. */
+/** Dashboard-driven scan ('client' driver): steps, ranking, score upload, and finalize. */
 async function clientScanLoop(): Promise<void> {
   try {
     scanning.value = true;

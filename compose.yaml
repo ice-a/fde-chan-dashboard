@@ -8,6 +8,19 @@ services:
       MARKET_STALE_TTL_SECONDS: ${MARKET_STALE_TTL_SECONDS:-86400}
       MARKET_REQUEST_TIMEOUT_MS: ${MARKET_REQUEST_TIMEOUT_MS:-9000}
       MARKET_PROVIDER_CONCURRENCY: ${MARKET_PROVIDER_CONCURRENCY:-4}
+      # 持久化 + 定时流水线：配置 libSQL 后自动启用每日同步→扫描→封口周期。
+      # 远程 Turso：libsql://<db-name>-<org>.turso.io（需 TURSO_AUTH_TOKEN）
+      # 本地文件：file:/data/chan.db（需挂载 ./data 卷，见下方 volumes）
+      TURSO_DATABASE_URL: ${TURSO_DATABASE_URL:-}
+      TURSO_AUTH_TOKEN: ${TURSO_AUTH_TOKEN:-}
+      RESEARCH_ADMIN_TOKEN: ${RESEARCH_ADMIN_TOKEN:-}
+      CRON_TICK_SECONDS: ${CRON_TICK_SECONDS:-60}
+      CRON_SCAN_BATCH: ${CRON_SCAN_BATCH:-8}
+      CRON_CYCLE_HOUR_UTC: ${CRON_CYCLE_HOUR_UTC:-16}
+      CRON_CN_SYNC_DEADLINE_HOURS: ${CRON_CN_SYNC_DEADLINE_HOURS:-0}
+      NOTIFY_BARK_URL: ${NOTIFY_BARK_URL:-}
+      NOTIFY_NTFY_URL: ${NOTIFY_NTFY_URL:-}
+      NOTIFY_WEBHOOK_URL: ${NOTIFY_WEBHOOK_URL:-}
     restart: unless-stopped
     init: true
     read_only: true
@@ -15,3 +28,6 @@ services:
       - /tmp:size=16m
     security_opt:
       - no-new-privileges:true
+    # 使用本地 file: 数据库时取消注释：
+    # volumes:
+    #   - ./data:/data

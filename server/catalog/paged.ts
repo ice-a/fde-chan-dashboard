@@ -21,7 +21,7 @@ interface PageContext {
 
 /**
  * Fetch exactly one page per source so each catalog request stays well within
- * the Workers CPU budget; the dashboard loops cursors until nextCursor is null.
+ * the dashboard loops cursors until nextCursor is null.
  */
 export async function fetchCatalogPage(source: PagedSource, cursor: string | null, context: PageContext): Promise<PagedResult> {
   const page = cursor ? Number(cursor) : 0;

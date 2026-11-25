@@ -5,8 +5,8 @@
  *   node scripts/migrate-to-libsql.ts <libsql-url> <auth-token>
  *   TURSO_DATABASE_URL=... TURSO_AUTH_TOKEN=... node scripts/migrate-to-libsql.ts
  *
- * Sources (produced before wrangler.jsonc binding removal):
- *   d1-instrument.json / d1-market-cache.json / d1-catalog-meta.json  (wrangler d1 execute --json)
+ * Sources (produced before the D1/KV binding removal):
+ *   d1-instrument.json / d1-market-cache.json / d1-catalog-meta.json  (D1 export --json)
  *   kv-backup.json  (wrangler kv key list/get dump, { key: 'daily:<id>', value: <CacheEntry JSON string> })
  *
  * Applies schema.sql, then inserts rows with parameter binding in batches,

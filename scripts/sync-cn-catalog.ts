@@ -1,11 +1,11 @@
 /**
  * CN catalog sync for machines with mainland-friendly egress.
  *
- * SSE/SZSE block Cloudflare's shared egress (WAF 403), so the Workers cron
- * records those four sources as failed every day. Run this script from a Node
- * host (this machine, a VPS, Docker) after the daily cycle starts: it pages
+ * SSE/SZSE may block some network egress (WAF 403), in which case the daily
+ * pipeline records those four sources as failed. Run this script from a Node
+ * host with mainland-friendly egress after the daily cycle starts: it pages
  * through the CN catalogs and stages rows into the same libSQL database. The
- * Workers cron picks the sources up as complete and commits as usual.
+ * pipeline picks the sources up as complete and commits as usual.
  *
  * Usage (Windows Task Scheduler / cron, e.g. daily 01:00 Beijing):
  *   node --env-file=.env scripts/sync-cn-catalog.ts
@@ -52,7 +52,7 @@ async function main(): Promise<void> {
       continue;
     }
     // Resume mid-source only when a previous run of THIS script left it running.
-    // A cron 'failed' record starts over (Workers never staged anything anyway).
+    // A cron 'failed' record starts over (the pipeline never staged anything anyway).
     let cursor = state?.status === 'running' && state.pagesDone > 0 ? String(state.pagesDone) : null;
     let pages = 0;
     let rows = 0;
@@ -78,7 +78,7 @@ async function main(): Promise<void> {
       console.log(`${label}：失败落账（已推进 ${pages} 页 / ${rows} 只）——${message}`);
     }
   }
-  if (synced) console.log(`CN 目录同步完成 ${synced} 个来源，Workers cron 将在下一分钟 tick 提交目录。`);
+  if (synced) console.log(`CN 目录同步完成 ${synced} 个来源，定时流水线将在下一 tick 提交目录。`);
   if (failures.length) {
     console.log(`未成功的来源：${failures.join('；')}`);
     console.log('提示：深交所对本机 TLS 握手亦会掐断（IP/指纹级封锁）。换网络（如手机热点）重跑本脚本可续传。');

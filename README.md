@@ -1,6 +1,6 @@
 # 缠论 × 动量 · 二维共振看板
 
-从单文件 HTML 迁移而来的动态前端项目。Vue 3 + TypeScript + Vite + Pinia + ECharts，配同构行情服务，可部署到 **Cloudflare Workers、Vercel Functions 或 Docker Compose**。原始 `../缠论动量二维共振看板_5分钟刷新.html` 保持不变。
+从单文件 HTML 迁移而来的动态前端项目。Vue 3 + TypeScript + Vite + Pinia + ECharts，配同构行情服务，**自托管部署（Node 或 Docker Compose）**。原始 `../缠论动量二维共振看板_5分钟刷新.html` 保持不变。
 
 ## 功能
 
@@ -16,7 +16,7 @@
 - 本机自选：固定配置池内收藏、自选筛选；默认仍按全池计算动量，不用子集重排。
 - 导出：当前筛选排名 CSV、单标的完整研究 JSON、本机信号事件 CSV。
 - 本机信号动态：象限、结构观察和超过5位的排名变化，最多240条，去重且忽略陈旧数据。
-- 服务端定时流水线：Workers Cron 每日自动同步目录 → 全市场扫描 → 评分封口，无需打开页面；页面"自动流水线"面板实时展示进度、速率与预计完成时间。
+- 服务端定时流水线：Node 宿主内置 timer 每日自动同步目录 → 全市场扫描 → 评分封口，无需打开页面；页面"自动流水线"面板实时展示进度、速率与预计完成时间。
 - 快照历史与趋势：保留最近 30 轮每日快照，自选标的跨快照排名曲线对比。
 - 服务端信号：相邻快照自动 diff（象限跃迁、排名变动≥5位），跨设备保存；可选 Bark / ntfy / webhook 推送每日摘要。
 
@@ -41,26 +41,20 @@
 - 整页首轮：75 / 81 个标的产生有效评分；`HK:03456` 仅 101 根有效日线，按原最低 130 根规则排除。
 - 东方财富曾通过 curl 成功取得真实 JSON；本机 Node 的网络连接在后续测试中被上游关闭，因此实际页面降级为备用源。并非所有网络环境都复现这一限制。
 
-## Cloudflare 部署（已完成）
-
-- **正式地址：https://pan.020417.xyz**（自定义域名，Workers 自管 DNS 与证书）
-- **libSQL 数据库**（Turso Cloud 免费档：5 亿行读/月 + 1000 万行写/月，SQLite 方言）：承载目录、扫描台账、评分与**行情缓存**（`market_cache` 表）。D1 免费档为日配额（500 万行读/天 + 10 万行写/天），一轮全市场同步+扫描即耗尽，故整体迁移至 libSQL
-- Worker 通过 `@libsql/client/web`（HTTP 传输）访问 Turso：`TURSO_DATABASE_URL` 为 var，`TURSO_AUTH_TOKEN` 用 `wrangler secret put` 配置
-- **KV 已删除**：`MARKET_KV` 绑定与 `KVCache` 代码路径已移除（曾因 KV 日操作上限告警，先迁 D1、后随整体迁移落 libSQL）
-- **D1 已删除**：`chan-dashboard-db` 绑定移除；迁移前数据已导出（`d1-*.json`、`d1-backup.sql`）并通过 `scripts/migrate-to-libsql.ts` 落库
-- GitHub 仓库：https://github.com/ice-a/chan-dashboard（仅代码托管；GitHub Actions 自动部署已按需求移除）
-- 手动部署：`pnpm build && pnpm cf:deploy`
-
-### 存储适配层
+## 存储适配层
 
 存储收敛在两个接口后：`ResearchStore`（目录+扫描）与 `MarketCache<T>`（行情缓存）。现有实现：
 
 | 实现 | 后端 | 驱动 |
 | --- | --- | --- |
-| `D1ResearchStore` + `D1MarketCache` + `LibSqlDatabase` | Turso Cloud / sqld / `file:` 本地库 | Workers `client`；Node 可传 `{ driver: 'server' }` |
-| `MemoryResearchStore` + `MemoryCache` | 进程内存（未配置 `TURSO_DATABASE_URL` 时） | Node `server` |
+| `D1ResearchStore` + `D1MarketCache` + `LibSqlDatabase` | Turso Cloud / sqld / `file:` 本地库 | `@libsql/client`（Node） |
+| `MemoryResearchStore` + `MemoryCache` | 进程内存（未配置 `TURSO_DATABASE_URL` 时） | Node |
 
-libSQL 适配器复用 D1 的 SQL 与 schema（`server/storage/schema.sql`），Node 自托管（Docker）与 Workers 共用同一套存储代码。
+libSQL 适配器复用同一套 SQL 与 schema（`server/storage/schema.sql`），Node 自托管（Docker 或裸 Node）共用同一套存储代码。
+
+- **远程 Turso**：`TURSO_DATABASE_URL=libsql://…` + `TURSO_AUTH_TOKEN`（Turso Cloud 免费档：5 亿行读/月 + 1000 万行写/月，SQLite 方言）。
+- **本地文件**：`TURSO_DATABASE_URL=file:./chan.db`，零依赖自托管，无需 token。
+- 未配置时使用进程内存（重启即失），仅适合试用。
 
 ## 全市场目录与扫描（2026-11 新增）
 
@@ -72,7 +66,7 @@ libSQL 适配器复用 D1 的 SQL 与 schema（`server/storage/schema.sql`），
 | --- | --- | ---: | --- |
 | A股 | 上交所 getStockListData2（主板 + 科创板） | 1,604 + 405 | 完整分页验证 |
 | A股 | 深交所 ShowReport（A股 + ETF） | 2,905 + 772（ETF 含 LOF 过滤） | 完整分页验证；当前网络偶发 fetch failed，失败轮会如实标注 |
-| 港股 | 港交所 ListOfSecurities.xlsx（主板普通股） | 完整工作簿应为数千行 | 本机与 Cloudflare 出口实测均只拿到 8 行**样本文件**（仅前 5 只，换浏览器 UA / 带 Cookie 结果字节完全相同），截断护栏如实判失败；需能从港交所取得完整文件的网络或客户端 |
+| 港股 | 港交所 ListOfSecurities.xlsx（主板普通股） | 完整工作簿应为数千行 | 本机实测只拿到 8 行**样本文件**（仅前 5 只，换浏览器 UA / 带 Cookie 结果字节完全相同），截断护栏如实判失败；需能从港交所取得完整文件的网络或客户端 |
 | 美股 | Nasdaq screener `download=true` 全量单次（浏览器解析） | 7,291（纳入约 5,805，排除权证/优先股等约 1,486）+ 5,519 | 完整验证；分页端点每次请求顺序非确定（offset 开窗会重复且遗漏），已弃用分页改为全量下载 |
 | 北交所 | bse.cn 有反爬拦截 | 未同步 | 明确列为缺口，不伪造数据 |
 
@@ -81,35 +75,35 @@ libSQL 适配器复用 D1 的 SQL 与 schema（`server/storage/schema.sql`），
 ### 扫描与快照（libSQL 持久化 + 分片流水线）
 
 - **目录同步两种驱动**：
-  - Node/Docker（`driver: server`）：`POST /api/catalog/sync` 一次完成四来源同步，每来源最多重试 2 次。
-  - Workers（`driver: client`）：逐页 `POST /api/catalog/sync/page`；港交所 XLSX 与 Nasdaq 全量 JSON 由**浏览器解析**（Workers CPU 10ms 预算，`/api/catalog/hkex-workbook`、`/api/catalog/nasdaq-screener` 仅透传字节）后 `POST /api/catalog/stage` 暂存，最后 `POST /api/catalog/commit` 提交。提交校验要求 7 个预期来源全部在场且完成，否则 `complete:false`（未封口），不冒充全市场。任一分页失败会**落账为 failed 并继续其余来源**（逐来源重试 2 次），不会一源失败中断全局。
+  - `server` 驱动（Node）：`POST /api/catalog/sync` 一次完成四来源同步，每来源最多重试 2 次。
+  - `client` 驱动（浏览器推进）：逐页 `POST /api/catalog/sync/page`；港交所 XLSX 与 Nasdaq 全量 JSON 由**浏览器解析**（`/api/catalog/hkex-workbook`、`/api/catalog/nasdaq-screener` 仅透传字节）后 `POST /api/catalog/stage` 暂存，最后 `POST /api/catalog/commit` 提交。提交校验要求 7 个预期来源全部在场且完成，否则 `complete:false`（未封口），不冒充全市场。任一分页失败会**落账为 failed 并继续其余来源**（逐来源重试 2 次），不会一源失败中断全局。
 - **扫描两种驱动**：
   - Node：`POST /api/scans` 后服务端后台分片推进（每批 8 只），完成后自动评分并封口。
-  - Workers：前端循环 `POST /api/scans/:id/step` 推进 → `GET /raws` 拉取评分输入 → **浏览器计算全局排名**（`rankRawEntries`，与服务端同一纯函数）→ `POST /scores` 分块回写 → `POST /finalize` 封口校验。进度持久化在 libSQL，刷新页面可断点续跑。
+  - 浏览器：前端循环 `POST /api/scans/:id/step` 推进 → `GET /raws` 拉取评分输入 → **浏览器计算全局排名**（`rankRawEntries`，与服务端同一纯函数）→ `POST /scores` 分块回写 → `POST /finalize` 封口校验。进度持久化在 libSQL，刷新页面可断点续跑。
 - `GET /api/scans/:id`：实时进度（成功 / 历史不足 / 失败 / 待处理）。
 - `POST /api/scans/:id/retry`：重试终态失败项。
 - 排名快照存 `score` 表，`/api/snapshots/current/rankings` 按 SQL 分页（≤200 条/页），不加载整库。
 - 快照轮转保留最近 30 轮（`GET /api/snapshots/list`），跨快照排名曲线走 `GET /api/snapshots/trends?ids=...`，页面"快照趋势"面板展示自选标的的曲线对比。
 
-### 服务端定时流水线（Workers Cron）
+### 服务端定时流水线（Node 内置 timer）
 
-`wrangler.jsonc` 挂载 `* * * * *` 定时任务，`server/core/cronRunner.ts` 每个 tick 做一小步并持久化进度（状态存 `app_state` 表），关掉浏览器也整夜推进：
+配置 `TURSO_DATABASE_URL` 后，Node 宿主启动即挂载内置 timer（`CRON_TICK_SECONDS`，默认 60 秒），`server/core/cronRunner.ts` 每个 tick 做一小步并持久化进度（状态存 `app_state` 表），关掉浏览器也整夜推进：
 
 1. **每日门控**：UTC `CRON_CYCLE_HOUR_UTC`（默认 16 = 北京 0 点）后启动当日周期（目录同步 → 提交 → 扫描 → 封口发布）。
-2. **目录同步**：每 tick 推进最多 3 个来源；失败来源当日自动重试 2 次，仍失败如实落账。CN 来源被 Workers 出口 WAF 拦截时可配 `CRON_CN_SYNC_DEADLINE_HOURS`（默认 3）：提交前等待外部 CN 同步脚本（见下）把行暂存进来，超时则按"未封口"提交。
-3. **扫描推进**：每 tick 最多 `CRON_SCAN_BATCH`（当前 8）只；崩溃/超时未回写的领取项下一 tick 自动回收重扫（防死锁）；全部终态后自动重试一轮失败项，再评分封口。
-4. **信号与推送**：封口后与上一快照 diff（象限跃迁、排名变动 ≥5 位）写入 `signal_events`（`GET /api/snapshots/signals`，页面"信号动态 → 服务端信号"跨设备展示），并可选推送摘要到 **Bark / ntfy / 通用 webhook**（`NOTIFY_BARK_URL` / `NOTIFY_NTFY_URL` / `NOTIFY_WEBHOOK_URL`，任一配置即生效；Worker 侧用 `wrangler secret put`）。测试：`POST /api/pipeline/test-notify`（需管理令牌）。
+2. **目录同步**：每 tick 推进最多 3 个来源；失败来源当日自动重试 2 次，仍失败如实落账。CN 来源被本机网络拦截时可配 `CRON_CN_SYNC_DEADLINE_HOURS`（默认 1）：提交前等待外部 CN 同步脚本（见下）把行暂存进来，超时则按"未封口"提交。
+3. **扫描推进**：每 tick 最多 `CRON_SCAN_BATCH`（默认 8）只；崩溃/超时未回写的领取项下一 tick 自动回收重扫（防死锁）；全部终态后自动重试一轮失败项，再评分封口。
+4. **信号与推送**：封口后与上一快照 diff（象限跃迁、排名变动 ≥5位）写入 `signal_events`（`GET /api/snapshots/signals`，页面"信号动态 → 服务端信号"跨设备展示），并可选推送摘要到 **Bark / ntfy / 通用 webhook**（`NOTIFY_BARK_URL` / `NOTIFY_NTFY_URL` / `NOTIFY_WEBHOOK_URL`，任一配置即生效）。测试：`POST /api/pipeline/test-notify`（需管理令牌）。
 5. **状态可见**：`GET /api/pipeline/status` 返回周期门控、各来源进度与重试数、扫描速率与 ETA、最新快照；页面"自动流水线"面板每分钟刷新展示。
 
-免费版边界（实测）：cron 单次 invocation 的 CPU 与子请求数有硬上限，一批行情抓取（每只 1-9 秒上游 I/O）只能小批推进——批次 8 实测约 7-8 只/分钟稳定运行，11k 标的约 24 小时跑完。
+每个 tick 有界且可恢复：一批行情抓取（每只 1-9 秒上游 I/O）小批推进——批次 8 实测约 7-8 只/分钟稳定运行，11k 标的约 24 小时跑完。
 
-**CN 目录外部同步**（补 Workers 出口被 WAF 拦的上交所/深交所缺口）：在大陆网络可达的机器（本机 / VPS / Docker）每日周期启动后运行
+**CN 目录外部同步**（补本机网络被 WAF 拦的上交所/深交所缺口）：在大陆网络可达的机器每日周期启动后运行
 
 ```bash
 node --env-file=.env scripts/sync-cn-catalog.ts   # 需要 TURSO_DATABASE_URL / TURSO_AUTH_TOKEN
 ```
 
-逐页把 CN 目录暂存进同一 libSQL 库；已完成来源自动跳过，单源失败落账不中断其余，中断后重跑可续传。Workers cron 在等待窗口内看到行进来即照常提交。实测（2026-11-20，本机网络）：上交所主板 1,604 只 + 科创板 405 只共 22 页 6 秒入库；深交所对本机亦为 TLS 握手层掐断（连根域名都不通，IP/指纹级封锁），需换网络（如手机热点）重跑补齐。
+逐页把 CN 目录暂存进同一 libSQL 库；已完成来源自动跳过，单源失败落账不中断其余，中断后重跑可续传。定时流水线在等待窗口内看到行进来即照常提交。实测（2026-11-20，本机网络）：上交所主板 1,604 只 + 科创板 405 只共 22 页 6 秒入库；深交所对本机亦为 TLS 握手层掐断（连根域名都不通，IP/指纹级封锁），需换网络（如手机热点）重跑补齐。
 
 数据源按市场能力路由（CN→东财→腾讯，US→Nasdaq），不对不支持的市场做无效探测。K 线详情**按需计算**（`/detail` 端点现场取数+计算，0.3ms/只），不持久化 13k 份 K 线。
 
@@ -125,9 +119,9 @@ node server/node/index.ts --research-token <你的本地管理令牌>
 ### 已知缺口（如实标注，不伪造）
 
 - 港股 ETF 目录与北交所目录暂缺来源，页面会显示来源缺口而非假装完整。
-- 港交所工作簿有下载截断护栏（主板普通股 <1000 条即判失败）；本机与 Cloudflare 出口实测拿到的都是仅含前 5 只的样本文件（非传输截断：有效 XLSX、字节完全一致），需换能取得完整文件的网络/客户端。
-- Cloudflare 出口访问上交所/深交所会被 WAF 403 拦截（Nasdaq、港交所可达），由服务端 cron 如实落账为 failed。本机大陆网络实测：上交所直连可用（`scripts/sync-cn-catalog.ts` 已验证入库 2,009 只），深交所对本机亦为 TLS 握手层掐断（Node/curl/PowerShell/代理均失败，IP/指纹级封锁），需换网络重跑补齐。`complete:false` 目录即"未封口"，扫描可继续但来源缺口可见。
-- 扫描中的失败项可重试；cron 每轮封口前自动重试一次；封口校验在 `finalize` 与 `shared/integrity.ts`。
+- 港交所工作簿有下载截断护栏（主板普通股 <1000 条即判失败）；本机实测拿到的都是仅含前 5 只的样本文件（非传输截断：有效 XLSX、字节完全一致），需换能取得完整文件的网络/客户端。
+- 部分网络出口访问上交所/深交所会被 WAF 403 拦截（Nasdaq、港交所可达），由定时流水线如实落账为 failed。本机大陆网络实测：上交所直连可用（`scripts/sync-cn-catalog.ts` 已验证入库 2,009 只），深交所对本机亦为 TLS 握手层掐断（Node/curl/PowerShell/代理均失败，IP/指纹级封锁），需换网络重跑补齐。`complete:false` 目录即"未封口"，扫描可继续但来源缺口可见。
+- 扫描中的失败项可重试；流水线每轮封口前自动重试一次；封口校验在 `finalize` 与 `shared/integrity.ts`。
 
 ## 结构图谱、导出与本机历史
 
@@ -141,7 +135,7 @@ node server/node/index.ts --research-token <你的本地管理令牌>
 
 首次有效轮次只建立基线。后续只有象限变化、结构观察变化或排名变化至少5位才记录事件；相同状态不重复记录，stale结果不产生事件，盘中数据标为“盘中观察”。清空操作有二次确认，收藏不受影响。
 
-本机收藏与历史使用当前浏览器、当前origin的 `localStorage`，不上传服务器，不是账号同步或完整行情历史；`:5173`、`:8787`、正式域名之间不共享。历史最多240条，存储失败不影响行情刷新。三种部署均无需新增数据库。
+本机收藏与历史使用当前浏览器、当前origin的 `localStorage`，不上传服务器，不是账号同步或完整行情历史；不同端口、不同域名之间不共享。历史最多240条，存储失败不影响行情刷新。自托管部署无需新增数据库。
 
 ## 本地开发
 
@@ -156,7 +150,7 @@ pnpm dev
 
 ```bash
 pnpm test        # Vitest 单元测试
-pnpm typecheck   # 前端、Worker、Node 与 Vercel 函数类型检查
+pnpm typecheck   # 前端与服务端类型检查
 pnpm build       # 类型检查 + dist 前端生产构建
 pnpm start       # 生产模式：同一端口提供 dist 与 API
 ```
@@ -173,6 +167,8 @@ pnpm start       # 生产模式：同一端口提供 dist 与 API
 | `MARKET_REQUEST_TIMEOUT_MS` | `9000` | 单个上游请求超时 |
 | `MARKET_PROVIDER_CONCURRENCY` | `4` | 每个供应商的服务端并发上限（1–8） |
 | `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` | 空（内存） | libSQL 持久化：远程 `libsql://…` 或本地 `file:./chan.db` |
+| `RESEARCH_ADMIN_TOKEN` | 空 | 目录同步 / 扫描等管理操作的令牌（也可用 `--research-token` 传入） |
+| `CRON_TICK_SECONDS` | `60` | 定时流水线每 tick 间隔秒数（最小 60，配置 libSQL 后启用） |
 | `CRON_SCAN_BATCH` | `8` | 定时扫描每 tick 推进的标的数 |
 | `CRON_CYCLE_HOUR_UTC` | `16` | 每日周期启动的 UTC 小时（16 = 北京 0 点） |
 | `CRON_CN_SYNC_DEADLINE_HOURS` | `0` | CN 源失败后等待外部 CN 同步提交窗口（小时，0=不等） |
@@ -185,51 +181,11 @@ docker compose up --build
 # http://localhost:8787
 ```
 
-多阶段镜像使用 Node 24 Alpine，前端在构建阶段编译，生产阶段不需要安装运行时 npm 依赖。容器以非 root 用户运行，只读根文件系统、受限临时目录，含健康检查。Compose 默认映射 `8787:8787`。
+多阶段镜像使用 Node 24 Alpine，前端在构建阶段编译，生产阶段不需要安装运行时 npm 依赖。容器以非 root 用户运行，只读根文件系统、受限临时目录，含健康检查。Compose 默认映射 `8787:8787`，并把 libSQL、定时流水线与推送渠道的环境变量透传进容器（见 `compose.yaml`）；使用本地 `file:` 数据库时挂载 `./data` 卷。
 
 ```bash
 docker compose down
 ```
-
-## Cloudflare Workers + 静态资源
-
-项目通过 `wrangler.jsonc` 同时托管 `dist` 和 `worker/index.ts`，`/api/*` 由 Worker 处理，其他路径回退到 SPA。共享处理器使用标准 `Request` / `Response`。
-
-```bash
-pnpm exec wrangler login
-pnpm build
-pnpm cf:dev
-# 需要实际上线时：
-pnpm cf:deploy
-```
-
-未绑定 KV 时使用 Worker 实例内存缓存，冷启动/不同实例之间不共享。生产建议创建 KV：
-
-```bash
-pnpm exec wrangler kv namespace create MARKET_KV
-```
-
-将返回的命名空间 ID 填入 `wrangler.jsonc` 中已注释的 `kv_namespaces`，绑定名保持 `MARKET_KV`。KV 提供跨实例的短期/陈旧缓存，但存在传播延迟，不应用作行情时点的权威依据。
-
-`pnpm cf:build` 会执行前端构建及 `wrangler deploy --dry-run`，不上传、不创建云资源。Cloudflare 的公共出口能否访问全部上游，需要在目标区域实测。
-
-## Vercel + Functions
-
-- Vite 构建输出 `dist`。
-- `api/market/[...path].ts` 处理行情接口，`api/health.ts` 处理健康检查。
-- `vercel.json` 仅对非 `/api/` 路径执行 SPA 回退。
-- Functions 复用同一个标准 `fetch(request)` 处理器，不需要 Express。
-
-```bash
-pnpm exec vercel login
-pnpm exec vercel link
-pnpm vercel:build  # 不登录也可验证官方函数构建器
-pnpm vercel:dev
-# 需要实际上线时：
-pnpm exec vercel deploy --prod
-```
-
-Vercel 使用实例内存缓存；冷启动、扩缩容和不同实例不保证共享，也不依赖磁盘或永久后台进程。可通过平台环境变量配置与 `.env.example` 相同的参数。跨源请求需在函数所在区域实测，生产流量大时应换成有 SLA 的行情 API 和持久缓存。
 
 ## API
 
@@ -261,10 +217,8 @@ src/
   services/         浏览器同源行情 API、导出、存储与信号归并
   stores/           请求代次、结果、陈旧状态、收藏与本机历史
 shared/             前后端共享行情与展示类型
-server/core/        数据源、校验、路由、缓存、标准 HTTP 处理器
-server/node/        Node 静态资源与 API 宿主
-worker/             Cloudflare Workers 适配
-api/                Vercel Functions 适配
+server/core/        数据源、校验、路由、缓存、标准 HTTP 处理器、定时流水线
+server/node/        Node 静态资源与 API 宿主（内置流水线 timer）
 tests/              算法、校验、缓存与降级单元测试
 ```
 
@@ -280,14 +234,10 @@ tests/              算法、校验、缓存与降级单元测试
 
 - Vitest：29 项单元测试通过（含结构映射、收藏、导出、信号历史与 libSQL 适配器）。
 - TypeScript、Vite 生产构建：通过。ECharts 独立打包，首屏会加载图表模块；XLSX（港交所解析）按需分包。
-- 存储：已从 D1/KV 整体迁移至 libSQL（Turso Cloud 免费档）。迁移前 D1 数据导出并落库对账通过（instrument 13,436、market_cache 64、catalog_meta 1、KV 残留缓存 107 键）。KV/D1 绑定与 `KVCache` 代码路径已删除。
-- 配额：libSQL 免费档按月计（5 亿行读/月 + 1000 万行写/月），一轮全市场同步+扫描约 6-7 万行写，余量约 4-5 倍；不再受 D1 日配额约束。
-- Cloudflare 线上：已部署至 **https://pan.020417.xyz**（`pnpm exec wrangler deploy`），`RESEARCH_ADMIN_TOKEN` 以 Worker secret 配置，无令牌写操作返回 401；Nasdaq 全量透传解析、分页同步、失败落账均在线上实测通过。
-- 线上目录现状（未封口如实展示）：深交所 2,905 + ETF 772、Nasdaq 5,805 + ETF 5,519 完整；上交所被 Cloudflare 出口 403、港交所仅获样本文件，标 failed 待重试。
-- 配额约束（历史）：KV 日限额与 D1 日行读写限额均已耗尽，是本次整体迁移到 libSQL 的直接原因。
+- 存储：已从 D1/KV 整体迁移至 libSQL（Turso Cloud 免费档或本地 `file:`）。迁移前 D1 数据导出并落库对账通过（instrument 13,436、market_cache 64、catalog_meta 1、KV 残留缓存 107 键）。
+- 配额：libSQL 免费档按月计（5 亿行读/月 + 1000 万行写/月），一轮全市场同步+扫描约 6-7 万行写，余量约 4-5 倍。
 - 全市场目录实测：上交所 1,604+405、Nasdaq 股票 5,807 / ETF 5,519、港交所与深交所因本机网络失败被如实标注；同步约 13–60 秒（视网络）、失败来源自动重试 2 次。
 - 全量扫描实测封口：13,335 只 31 分钟跑完（约 7 只/秒，本机网络限速），两轮终态分别为 10,411 + 2,924 与 8,393 + 4,942 成功/失败（本机网络随时间劣化，失败项可重试），评分与四象限（首轮 995 / 2,134 / 713 / 6,569）全部落表，封口校验通过并发布快照；进度实时可查、刷新页面可断点续显。
 - 快照查询实测：`/api/snapshots/current/rankings` 分页返回真实排名与总数（`current` 别名解析为真实快照 ID）；40 只抽样扫描 5 秒封口，32 成功全部可查、8 失败进入诊断。排名并列按算法口径（共振分 → 动量分 → ID）对齐，# 列与显示顺序一致。
 - 主题：浅色 / 深色 / 暖砂三套，图表随主题重绘；首屏数字（Hero、刷新分母、市场规模）全部改为动态取值。
-- Vercel：官方构建器及动态 Function 编译通过；Docker：当前机器无 Docker 可执行文件，未实际构建容器。
-- GitHub Actions：已按需求移除（仓库仅代码托管，手动 `pnpm cf:deploy`）。
+- Docker：当前机器无 Docker 可执行文件，未实际构建容器。

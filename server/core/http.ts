@@ -17,7 +17,7 @@ export interface ResearchHandlerOptions {
   store?: ResearchStore;
   adminToken?: string;
   catalogTimeoutMs?: number;
-  /** Auto-run scans in-process (Node). Workers use the client-driven pipeline instead. */
+  /** Auto-run scans in-process (Node server driver). The 'client' driver uses the dashboard-driven pipeline instead. */
   backgroundScan?: boolean;
   /** Push channels for the daily snapshot notification (optional). */
   notify?: NotifyConfig;
@@ -97,8 +97,8 @@ export function createResearchHandler(router: ProviderRouter, options: ResearchH
     }
     if (path === '/api/catalog/nasdaq-screener') {
       // The paged screener order is non-deterministic, so catalog sync uses the
-      // single-shot download=true payload, proxied unparsed (browser parses it —
-      // Workers CPU budget). Fixed host and path: not an open proxy.
+      // single-shot download=true payload, proxied unparsed (the browser parses
+      // it for the dashboard-driven pipeline). Fixed host and path: not an open proxy.
       const kind = url.searchParams.get('kind') === 'etf' ? 'etf' : 'stocks';
       try {
         const upstream = await fetch(`https://api.nasdaq.com/api/screener/${kind}?tableonly=true&limit=25&offset=0&download=true`, {

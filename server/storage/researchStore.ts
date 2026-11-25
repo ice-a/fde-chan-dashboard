@@ -59,10 +59,10 @@ export interface SyncSourceState {
 /**
  * Persistent research store. Catalog sync is paged (one source page per
  * request) and scans are chunked ("step") so long full-market runs survive
- * Cloudflare Workers request lifetimes and can be resumed after a reload.
+ * Request lifetimes and can be resumed after a reload.
  */
 export interface ResearchStore {
-  /** 'client' stores require the dashboard to drive scan/sync steps (Workers); 'server' stores auto-drive in-process (Node). */
+  /** 'client' stores require the dashboard to drive scan/sync steps; 'server' stores auto-drive in-process (Node). */
   readonly driver: 'client' | 'server';
 
   // Catalog: published view
