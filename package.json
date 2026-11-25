@@ -9,12 +9,13 @@
   "scripts": {
     "dev": "concurrently -k -n api,web \"pnpm dev:api\" \"pnpm dev:web\"",
     "dev:web": "vite",
-    "dev:api": "node --watch server/node/index.ts",
+    "dev:api": "node --env-file-if-exists=.env --watch server/node/index.ts",
     "build": "vue-tsc --noEmit && vite build",
     "typecheck": "vue-tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "start": "node server/node/index.ts",
+    "start": "node --env-file-if-exists=.env server/node/index.ts",
+    "backup": "node --env-file-if-exists=.env scripts/backup-db.ts",
     "docker:up": "docker compose up --build"
   },
   "dependencies": {

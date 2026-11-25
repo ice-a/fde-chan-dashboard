@@ -11,6 +11,7 @@ import { LibSqlDatabase } from '../storage/libsqlD1.ts';
 import { createDefaultRouter, createMarketHandler, createResearchHandler, json } from '../core/http.ts';
 import { hasNotifier, type NotifyConfig } from '../core/notify.ts';
 import { runCronTick } from '../core/cronRunner.ts';
+import { runJsonBackup } from '../core/backup.ts';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 
@@ -75,6 +76,23 @@ if (cronEnabled) {
   // Stagger the first tick so server startup is never blocked by pipeline work.
   setTimeout(() => { void tick(); const timer = setInterval(tick, cronIntervalMs); timer.unref?.(); }, 5_000);
 }
+// ----- Scheduled JSON backup -----
+// Full-table dump into backups/ every BACKUP_INTERVAL_HOURS (0 = disabled).
+// Runs only with persistence enabled; manual: pnpm backup.
+const backupIntervalHours = Number(process.env.BACKUP_INTERVAL_HOURS) || 0;
+if (libSqlUrl && backupIntervalHours > 0) {
+  const backupDir = resolve(root, 'backups');
+  const backupClient = createClient({ url: libSqlUrl, authToken: process.env.TURSO_AUTH_TOKEN || undefined });
+  const runBackup = (): void => {
+    runJsonBackup({ client: backupClient, backupDir, keep: Math.max(1, Number(process.env.BACKUP_KEEP) || 14) })
+      .catch((error) => console.error('[backup] failed', error));
+  };
+  // First backup shortly after startup, then on the fixed interval.
+  setTimeout(runBackup, 15_000).unref?.();
+  const timer = setInterval(runBackup, backupIntervalHours * 3_600_000);
+  timer.unref?.();
+}
+
 const mime: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json' };
 
 createServer(async (req, res) => {

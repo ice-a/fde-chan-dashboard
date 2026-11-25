@@ -5,6 +5,12 @@ dist/
 *.log
 .DS_Store
 
+# 本地 SQLite 数据库与 JSON 备份
+chan.db*
+chan.db-shm
+chan.db-wal
+backups/
+
 # 迁移备份（体积大且含快照数据，仅在本地保留）
 d1-backup.sql
 d1-*.json
